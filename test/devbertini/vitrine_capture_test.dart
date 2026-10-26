@@ -15,6 +15,7 @@ import 'dart:ui' as ui;
 import 'package:flauncher/devbertini/brand.dart';
 import 'package:flauncher/devbertini/cinematic.dart';
 import 'package:flauncher/devbertini/profile_model.dart';
+import 'package:flauncher/devbertini/vitrine/dedication.dart';
 import 'package:flauncher/devbertini/vitrine/home.dart';
 import 'package:flauncher/devbertini/vitrine/logos.dart';
 import 'package:flauncher/devbertini/vitrine/material_theme.dart';
@@ -161,7 +162,12 @@ String _flutterRoot() {
 void main() {
   final capture = Platform.environment['VITRINE_CAPTURE'] == '1';
 
+  // The pictures show the public build's signature, whatever the build they are rendered from.
+  setUpAll(() => VitrineDedication.shown = false);
+  tearDownAll(() => VitrineDedication.shown = true);
+
   testWidgets('captures of the Vitrine home', (tester) async {
+    expect(VitrineDedication.of(VitrineTokens.dark(CinematicPalette.devBertini)), isNull);
     await tester.runAsync(() async {
       await _font('Onest', rootBundle.load('assets/fonts/Onest/Onest-Variable.ttf'));
       final icons = File('${_flutterRoot()}/bin/cache/artifacts/material_fonts/materialicons-regular.otf');

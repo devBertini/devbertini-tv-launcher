@@ -349,7 +349,7 @@ class _VitrineRailState extends State<VitrineRail> with SingleTickerProviderStat
                           left: 0,
                           right: 0,
                           bottom: 22,
-                          child: const VitrineSignature(),
+                          child: VitrineSignature(open: v > 0.5),
                         ),
                     ],
                   ),

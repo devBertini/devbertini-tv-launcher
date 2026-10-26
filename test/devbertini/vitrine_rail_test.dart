@@ -1,6 +1,7 @@
 import 'package:flauncher/devbertini/brand.dart';
 import 'package:flauncher/devbertini/devbertini_intro.dart';
 import 'package:flauncher/devbertini/profile_model.dart';
+import 'package:flauncher/devbertini/vitrine/dedication.dart';
 import 'package:flauncher/devbertini/vitrine/focus.dart';
 import 'package:flauncher/devbertini/vitrine/rail.dart';
 import 'package:flauncher/devbertini/vitrine/signature.dart';
@@ -579,17 +580,20 @@ void main() {
   });
 
   group('the rail with the signature', () {
-    testWidgets('one line, 22 px above the bottom, centred on x 47 collapsed and in the panel open', (tester) async {
+    testWidgets('22 px above the bottom, centred on x 47 collapsed and in the panel open', (tester) async {
       final h = await _pump(tester);
       Rect mark() => tester.getRect(find.byType(DevBertiniMark));
-      double nameRight() => tester.getRect(find.textContaining('Bertini', findRichText: true).last).right;
+      // What the signature draws, the build's dedication included (vitrine/dedication.dart).
+      Rect content() => tester.getRect(find
+          .descendant(of: find.byType(VitrineSignature), matching: find.byWidgetPredicate((w) => w is Flex))
+          .first);
       expect(tester.getBottomLeft(find.byType(VitrineSignature)).dy, 540 - 22);
       expect(mark().size, const Size(10, 10));
-      expect((mark().left + nameRight()) / 2, closeTo(47, 0.01));
+      expect(content().center.dx, closeTo(47, 0.01));
 
       await _openOn(tester, h);
       final panel = tester.getRect(_panel);
-      expect((mark().left + nameRight()) / 2, closeTo(panel.center.dx, 0.01));
+      expect(content().center.dx, closeTo(panel.center.dx, 0.01));
       expect(tester.getBottomLeft(find.byType(VitrineSignature)).dy, 540 - 22);
     });
   });
@@ -610,7 +614,7 @@ void main() {
       );
     }
 
-    testWidgets('the name is dev in accent-ink and Bertini in ink-2 at 80%, and nothing follows it, in both themes',
+    testWidgets('the name is dev in accent-ink and Bertini in ink-2 at 80%, then only the dedication of the build',
         (tester) async {
       for (final tokens in [_dark(), _light()]) {
         await pumpSignature(tester, tokens);
@@ -623,10 +627,12 @@ void main() {
         expect(bertini.style!.color, tokens.ink2.withValues(alpha: 0.8));
         expect(spans.style!.fontSize, 10);
         expect(spans.style!.fontWeight, FontWeight.w700);
-        expect(find.descendant(of: find.byType(VitrineSignature), matching: find.byType(CustomPaint)), findsOneWidget,
-            reason: 'the mark only');
-        expect(find.descendant(of: find.byType(VitrineSignature), matching: find.byType(Text)), findsOneWidget,
-            reason: 'the name only');
+        // A build without a dedication draws the mark and the name only.
+        final dedicated = VitrineDedication.of(tokens) != null;
+        expect(find.descendant(of: find.byType(VitrineSignature), matching: find.byType(CustomPaint)),
+            findsNWidgets(dedicated ? 2 : 1));
+        expect(find.descendant(of: find.byType(VitrineSignature), matching: find.byType(Text)),
+            findsNWidgets(dedicated ? 2 : 1));
       }
     });
 
