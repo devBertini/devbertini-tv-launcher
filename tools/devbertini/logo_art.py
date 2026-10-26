@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Brand logo PNGs the Vitrine home draws (lib/devbertini/vitrine/logos.dart), rasterised from the brands' SVGs.
 
     python -B tools/devbertini/logo_art.py <svg folder> [<out folder>]

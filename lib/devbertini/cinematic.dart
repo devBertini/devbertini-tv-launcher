@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * Shared pieces of the Vitrine home (docs/devbertini/DESIGN-VITRINE.md): the launch fade, the Home-again
  * signal, the screen area, scrolling a focused card into view and the settings rows.

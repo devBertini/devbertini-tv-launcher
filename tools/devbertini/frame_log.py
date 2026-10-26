@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Says which thread makes the home's frames late on the TV: the UI thread (build, layout, paint) or the raster
 thread (drawing the layers), from the `DevBertiniFrame` lines a build made with
 `--dart-define=DEVBERTINI_FRAME_LOG=true` writes to logcat (lib/devbertini/frame_log.dart). measure_frames.py says how

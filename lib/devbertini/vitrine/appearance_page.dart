@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * Configurações > Tela inicial > Aparência: the theme (Claro, Escuro, Automático) and the accent colour (the five
  * palettes), as the approved mockup draws them (docs/devbertini/DESIGN-VITRINE.md; the mockup's .panel, .themes,

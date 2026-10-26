@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The Vitrine home's colours and type, dark and light (docs/devbertini/DESIGN-VITRINE.md, "Tokens"), and the
  * Aparência setting that picks between them.

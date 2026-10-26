@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The TV's extras around the clock: the weather (Open-Meteo), the sleep timer, the night dim and the
  * notice of what a TV update undid. Each one works only while the home is on screen.

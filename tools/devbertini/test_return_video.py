@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Tests of return_video.py's reading of screenrecord's raw frames and of its frame distance.
 
     python -B tools/devbertini/test_return_video.py

@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Tests of local_config.py: where the adb path and the known devices come from (tools/devbertini/local.json, never
 versioned), and what happens when there is no such file.
 

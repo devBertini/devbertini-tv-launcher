@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """HD card art for the apps on the home, drawn from the brands' vector logos.
 
 The apps ship their TV banners at 320x180 (Netflix 480x270) and the card is 427x240 pixels on a 1920x1080

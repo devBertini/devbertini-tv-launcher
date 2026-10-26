@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Prints the public declarations of Dart files, without bodies: what agents working in parallel call, in one
 context pack, instead of each reading the same sources (skill agents-and-models, references/brief.md, section 3).
 

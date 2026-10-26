@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Shows, frame by frame, what the TV shows when Home is pressed inside an app: whether the home comes back whole or
 is drawn again from black (docs/devbertini/PERFORMANCE.md).
 

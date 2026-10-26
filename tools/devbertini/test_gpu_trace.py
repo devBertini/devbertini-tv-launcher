@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Tests of gpu_trace.py's reading of an atrace dump: slices pair up per thread, the app's frames and SurfaceFlinger's
 compositions are timed only where they had the GPU alone, and the medians add up to the time per frame.
 

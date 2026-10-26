@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 # Dot-sourced by deploy.ps1, build_release.ps1, install_toolchain.ps1 and pull_banners.ps1:  . "$PSScriptRoot\local_config.ps1"
 # Reads tools\devbertini\local.json once (never versioned; local.example.json shows its shape) and answers for what
 # is specific to this machine. The Python tools read the same file through local_config.py.

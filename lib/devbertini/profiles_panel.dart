@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The profiles panel the Vitrine rail opens: pick a profile, add one, and rename, recolour or delete the one
  * selected.

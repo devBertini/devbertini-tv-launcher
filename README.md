@@ -1,5 +1,8 @@
 # devBertini TV Launcher
 
+By **Claudio Bertini** (devBertini): [GitHub](https://github.com/devBertini),
+[LinkedIn](https://www.linkedin.com/in/claudio-bertini/).
+
 A home screen for Android TV and Google TV, made to feel like a premium streaming box: your newest show up front,
 your apps as clean brand plates, and a quiet side rail for everything else. Built in Flutter, measured frame by
 frame on a real mid-range TV, private by design.
@@ -12,9 +15,9 @@ measure and install it. Licensed under the GPL-3.0 or later, like the projects i
 > **Em português.** Uma tela inicial para Android TV e Google TV, feita em Flutter: o último programa que você estava
 > vendo em destaque, os apps como placas com o logo de cada marca e um menu lateral discreto. Tema escuro e claro,
 > perfis, ilha de música, relógio com clima, protetor de tela em preto puro e modo noite. Foi medida quadro a quadro
-> numa TV real (TCL C7K) até ficar a 60 quadros por segundo ao andar pela fileira de apps. É um fork do LTvLauncher
-> sob a licença GPL-3.0. A documentação está em inglês; a tela inicial fala português e inglês, e os painéis de
-> ajustes, português.
+> numa TV real (TCL C7K) até ficar a 60 quadros por segundo ao andar pela fileira de apps. Feito por Claudio Bertini
+> (devBertini), é um fork do LTvLauncher sob a licença GPL-3.0. A documentação está em inglês; a tela inicial fala
+> português e inglês, e os painéis de ajustes, português.
 
 ![The Vitrine home, dark theme](docs/images/home-dark.png)
 
@@ -111,6 +114,8 @@ the install script that backs up the launcher's data before every install, and d
 
 ## Credits and license
 
+- Claudio Bertini (devBertini), author of this fork: the Vitrine home, the TV extras, the tools and their
+  measurements ([GitHub](https://github.com/devBertini), [LinkedIn](https://www.linkedin.com/in/claudio-bertini/)).
 - [LTvLauncher](https://github.com/leanbitlab-org/LtvLauncher) by LeanBitLab, the launcher this one is built on;
   [FLauncher](https://github.com/osrosal/flauncher) by osrosal, its foundation; and
   [FLauncher](https://gitlab.com/flauncher/flauncher) by etienn01, where it all started.
@@ -120,5 +125,7 @@ the install script that backs up the launcher's data before every install, and d
   them). The logo files are not in this repository: `tools/devbertini/logo_art.py` rasterises them on your machine
   from the brands' SVG logos you provide (DEVELOPMENT.md).
 
-This program is free software under the [GNU General Public License](LICENSE), version 3 or any later version. It is
-a personal project, not affiliated with TCL, Xiaomi, Google or any streaming service.
+This program is free software under the [GNU General Public License](LICENSE), version 3 or any later version.
+Copyright (C) 2026 Claudio Bertini (devBertini) for the fork's own code; the files that come from the projects above
+keep their authors' notices. It is a personal project, not affiliated with TCL, Xiaomi, Google or any streaming
+service.

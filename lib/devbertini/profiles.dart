@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * Profiles: each one has its own app order, hidden apps and categories (its own database file) and
  * its own launcher settings (its own prefix in the shared preferences). The list and the profile in

@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * What plays in the background, as an island at the top centre of the home: a black pill with the
  * cover, the track and a small level meter, dropping in when music starts and leaving when it ends.

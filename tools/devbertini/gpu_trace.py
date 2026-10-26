@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Says how long the TV's GPU takes for each frame of the launcher moving along its Apps row, and how much of it is
 SurfaceFlinger's own composition, from a system trace (`atrace gfx`), with no VM service and no build of its own.
 

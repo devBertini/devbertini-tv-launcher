@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 # Builds LTvLauncher DevBertini and puts it on a device in one command: connect (pairing after a reboot),
 # install, optionally reapply the device's setup checks (local.json), open the home,
 # then disconnect and stop adb.

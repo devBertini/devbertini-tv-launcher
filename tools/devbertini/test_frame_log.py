@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Tests of frame_log.py's reading of logcat: frames go to the moment whose marks hold them, and the budget counts.
 
     python -B tools/devbertini/test_frame_log.py

@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The studio intro, ported from the canonical iOS view (DevBertiniIntro.swift): the tile grows in
  * (0.15 to 0.6 s), the stem and the bowls draw (0.3 to 0.95 s), the name rises (0.75 to 1.15 s) and

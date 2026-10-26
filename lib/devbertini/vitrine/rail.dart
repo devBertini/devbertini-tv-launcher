@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The Vitrine home's side rail (docs/devbertini/DESIGN-VITRINE.md, "Rail, collapsed" and "Rail, expanded"): the
  * profile's avatar and seven round items, centred vertically. Collapsed it is icons only and paints no background;

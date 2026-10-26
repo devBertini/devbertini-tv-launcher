@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 # Installs the build toolchain into the toolchain root of tools\devbertini\local.json (JDK 21, Flutter 3.47.7, Android SDK with
 # platform-tools, android-36 and NDK 28.2.13676358; AGP fetches its own build-tools), each download
 # checked against its published hash.

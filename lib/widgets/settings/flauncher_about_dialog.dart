@@ -1,6 +1,7 @@
 /*
  * FLauncher
  * Copyright (C) 2024 LeanBitLab
+ * Modified in 2026 by Claudio Bertini (devBertini): the fork's author, name and links, in Portuguese and English.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +26,11 @@ import 'package:flauncher/providers/settings_service.dart';
 class LTvLauncherAboutDialog extends StatelessWidget {
   final PackageInfo packageInfo;
 
+  /// The fork's own repository and its author's pages.
+  static const String repositoryUrl = "https://github.com/devBertini/devbertini-tv-launcher";
+  static const String authorGitHubUrl = "https://github.com/devBertini";
+  static const String authorLinkedInUrl = "https://www.linkedin.com/in/claudio-bertini/";
+
   const LTvLauncherAboutDialog({
     super.key,
     required this.packageInfo,
@@ -38,6 +44,8 @@ class LTvLauncherAboutDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final settingsService = context.watch<SettingsService>();
     final accentColor = _hexToColor(settingsService.accentColorHex);
+    final pt = Localizations.maybeLocaleOf(context)?.languageCode == 'pt';
+    String tr(String en, String portuguese) => pt ? portuguese : en;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -74,7 +82,7 @@ class LTvLauncherAboutDialog extends StatelessWidget {
 
               // Title & Version
               const Text(
-                "LTvLauncher",
+                "devBertini TV Launcher",
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 20,
@@ -90,12 +98,22 @@ class LTvLauncherAboutDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                "Developed by LeanBitLab",
-                style: TextStyle(
+              Text(
+                tr("By Claudio Bertini (devBertini)", "Por Claudio Bertini (devBertini)"),
+                style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                tr("Based on LTvLauncher by LeanBitLab and on FLauncher",
+                    "Baseado no LTvLauncher, da LeanBitLab, e no FLauncher"),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
                 ),
               ),
               const SizedBox(height: 10),
@@ -107,10 +125,11 @@ class LTvLauncherAboutDialog extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Text(
-                  "A fast, private, and customizable open-source launcher designed for Android TV, Google TV, and Fire TV. 100% ad-free and tracker-free.",
+                child: Text(
+                  tr("A fast, private home screen for Android TV and Google TV, free and open source. No ads and no trackers.",
+                      "Uma tela inicial rápida e privada para Android TV e Google TV, livre e de código aberto. Sem anúncios e sem rastreadores."),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 11,
                     height: 1.4,
@@ -119,19 +138,43 @@ class LTvLauncherAboutDialog extends StatelessWidget {
               ),
               const SizedBox(height: 14),
 
-              // Social Links Section
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  "Community & Links",
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+              // The fork's author
+              _AboutSection(tr("Author", "Autor")),
+              const SizedBox(height: 8),
+              _AboutButton(
+                icon: Icons.code,
+                iconColor: Colors.white70,
+                label: tr("Source code on GitHub", "Código-fonte no GitHub"),
+                accentColor: accentColor,
+                autofocus: true,
+                onPressed: () {
+                  FLauncherChannel().openUrl(repositoryUrl);
+                },
               ),
+              const SizedBox(height: 6),
+              _AboutButton(
+                icon: Icons.person_outline_rounded,
+                iconColor: Colors.white70,
+                label: "GitHub (devBertini)",
+                accentColor: accentColor,
+                onPressed: () {
+                  FLauncherChannel().openUrl(authorGitHubUrl);
+                },
+              ),
+              const SizedBox(height: 6),
+              _AboutButton(
+                icon: Icons.work_outline_rounded,
+                iconColor: const Color(0xFF0A66C2),
+                label: "LinkedIn (Claudio Bertini)",
+                accentColor: accentColor,
+                onPressed: () {
+                  FLauncherChannel().openUrl(authorLinkedInUrl);
+                },
+              ),
+              const SizedBox(height: 14),
+
+              // The project it is built on
+              _AboutSection(tr("Original project: LeanBitLab", "Projeto original: LeanBitLab")),
               const SizedBox(height: 8),
 
               // Official Website
@@ -140,7 +183,6 @@ class LTvLauncherAboutDialog extends StatelessWidget {
                 iconColor: const Color(0xFF7C4DFF),
                 label: "Website",
                 accentColor: accentColor,
-                autofocus: true,
                 onPressed: () {
                   FLauncherChannel().openUrl("https://leanbitlab.github.io/LeanBitLab/");
                 },
@@ -151,7 +193,7 @@ class LTvLauncherAboutDialog extends StatelessWidget {
               _AboutButton(
                 icon: Icons.code,
                 iconColor: Colors.white70,
-                label: "GitHub Repository",
+                label: tr("LTvLauncher on GitHub", "LTvLauncher no GitHub"),
                 accentColor: accentColor,
                 onPressed: () {
                   FLauncherChannel().openUrl("https://github.com/leanbitlab-org/LtvLauncher");
@@ -186,13 +228,35 @@ class LTvLauncherAboutDialog extends StatelessWidget {
               // Close Action
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text(
-                  "Close",
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                child: Text(
+                  tr("Close", "Fechar"),
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AboutSection extends StatelessWidget {
+  final String title;
+
+  const _AboutSection(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white54,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
         ),
       ),
     );

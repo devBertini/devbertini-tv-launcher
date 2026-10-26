@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 # Builds the signed release APK of LTvLauncher DevBertini (armeabi-v7a, the TCL C7K's ABI).
 # Toolchain and signing key live outside the repository, in the toolchain root of tools\devbertini\local.json
 # (keys\ is never versioned: an update must be signed with the same key to install over the old version).

@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Where the tools find what is specific to one machine: the adb path and the names of the TV devices.
 
 Both come from tools/devbertini/local.json (never versioned; local.example.json shows its shape):

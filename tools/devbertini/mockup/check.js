@@ -1,3 +1,4 @@
+// Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 // Mockup self-check for HTML mockups of the home drawn at the launcher's 960x540 logical canvas (design options shown
 // for review before a screen is built). Each mockup page loads it as the last element of <body> (copy this file
 // beside the mockups, for example build/redesign/kit/). Opened with ?check=1 it waits for fonts and images, then

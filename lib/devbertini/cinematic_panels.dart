@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The launcher's settings (the gear) and the network panel (the Wi-Fi icon) in the DevBertini look:
  * true black, grouped, each row saying what it holds, the focused row cream with black text.

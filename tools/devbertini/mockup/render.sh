@@ -1,4 +1,5 @@
 #!/bin/bash
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 # Renders one mockup page to a 1920x1080 PNG (960x540 CSS px at device scale 2, the launcher's logical canvas) and
 # prints the page's self-check (kit/check.js) read back through Chrome's --dump-dom.
 #   render.sh <page.html (Windows path, C:/...)> <query, e.g. theme=light> <out.png (Windows path)> <profile dir>

@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Tests of measure_frames.py's guard: it reads which app is in front before pressing any key.
 
     python -B tools/devbertini/test_measure_frames.py

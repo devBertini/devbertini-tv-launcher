@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Claudio Bertini (devBertini). GPL-3.0-or-later, like the rest of this project.
 """Measures how smoothly the launcher draws on the TV, from the frames the screen really showed.
 
   python tools/devbertini/measure_frames.py --label baseline [--device <name>|<serial>|ip:port] [--repeat 3] [--skip-open]

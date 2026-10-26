@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The screensaver of the home: after some minutes without a key, the screen goes true black with
  * only a large thin clock, which moves to another place once a minute (the Mini LED panel then

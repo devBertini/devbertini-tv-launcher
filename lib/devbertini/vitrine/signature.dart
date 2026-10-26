@@ -1,5 +1,6 @@
 /*
  * DevBertini theme for LTvLauncher (GPL-3.0, like the rest of this project).
+ * Copyright (C) 2026 Claudio Bertini (devBertini)
  *
  * The studio's signature at the bottom of the Vitrine rail (docs/devbertini/DESIGN-VITRINE.md, "Signature").
  */
