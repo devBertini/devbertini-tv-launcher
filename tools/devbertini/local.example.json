@@ -1,0 +1,110 @@
+{
+  "toolchain_root": "C:\\path\\to\\tools",
+  "adb": "C:\\path\\to\\tools\\android-sdk\\platform-tools\\adb.exe",
+  "backups": "C:\\path\\to\\launcher-backups",
+  "weather": {
+    "city": "Your city",
+    "latitude": 0.0,
+    "longitude": 0.0
+  },
+  "devices": {
+    "living-room": {
+      "serial": "<adb-serial>",
+      "setup": [
+        "common",
+        "tv"
+      ]
+    }
+  },
+  "setup": {
+    "common": [
+      {
+        "name": "home role",
+        "check": "cmd role get-role-holders android.app.role.HOME",
+        "want": "^{pkg}$",
+        "fix": "cmd role add-role-holder --user 0 android.app.role.HOME {pkg}",
+        "why": "The launcher holds the HOME role, so Home opens it."
+      },
+      {
+        "name": "Google TV home off",
+        "check": "pm list packages -d com.google.android.apps.tv.launcherx",
+        "want": "launcherx",
+        "fix": "pm disable-user --user 0 com.google.android.apps.tv.launcherx",
+        "why": "Google TV's own home is disabled for user 0, or it takes Home back (pm enable undoes it)."
+      },
+      {
+        "name": "setup recovery off",
+        "check": "pm list packages -d com.google.android.tungsten.setupwraith",
+        "want": "setupwraith",
+        "fix": "pm disable-user --user 0 com.google.android.tungsten.setupwraith",
+        "why": "Google TV's setup recovery is disabled, or it brings Google TV's home back after an update."
+      },
+      {
+        "name": "usage stats",
+        "check": "appops get {pkg} GET_USAGE_STATS",
+        "want": "allow",
+        "fix": "appops set {pkg} GET_USAGE_STATS allow",
+        "why": "Lets the launcher know which app is in front."
+      },
+      {
+        "name": "overlay",
+        "check": "appops get {pkg} SYSTEM_ALERT_WINDOW",
+        "want": "allow",
+        "fix": "appops set {pkg} SYSTEM_ALERT_WINDOW allow",
+        "why": "Lets the launcher show its notices over other apps and open the home from the background."
+      },
+      {
+        "name": "TV listings",
+        "check": "dumpsys package {pkg} 2>/dev/null | grep READ_TV_LISTINGS",
+        "want": "granted=true",
+        "fix": "pm grant {pkg} android.permission.READ_TV_LISTINGS",
+        "why": "Lets the launcher read Android's Watch Next (the hero and Continuar assistindo)."
+      },
+      {
+        "name": "notification listener",
+        "check": "settings get secure enabled_notification_listeners",
+        "want": "{pkg_re}/{pkg_re}\\.LauncherNotificationListenerService",
+        "fix": "cmd notification allow_listener {pkg}/{pkg}.LauncherNotificationListenerService",
+        "why": "Lets the launcher show notifications and the playing track."
+      }
+    ],
+    "tv": [
+      {
+        "name": "secure settings (the launcher turns its console watcher back on)",
+        "check": "dumpsys package {pkg} 2>/dev/null | grep WRITE_SECURE_SETTINGS",
+        "want": "granted=true",
+        "fix": "pm grant {pkg} android.permission.WRITE_SECURE_SETTINGS",
+        "why": "Lets the launcher turn its accessibility service back on when the TV drops it."
+      },
+      {
+        "name": "console watcher",
+        "why": "The launcher's accessibility service: on a TCL it reads the input screen to see a console rest, and the sleep timer asks it for standby. It filters no keys.",
+        "check": "settings get secure enabled_accessibility_services",
+        "want": "{pkg_re}/{pkg_re}\\.LauncherAccessibilityService",
+        "fix": "settings put secure enabled_accessibility_services {pkg}/{pkg}.LauncherAccessibilityService; settings put secure accessibility_enabled 1",
+        "on_install": true
+      },
+      {
+        "name": "keep activities",
+        "why": "Developer option \"Don't keep activities\" off: on, Android destroys the home's screen whenever an app opens and every app's screen when it is left, so they come back rebuilt (TV-C7K.md, \"Measuring\").",
+        "check": "settings get global always_finish_activities",
+        "want": "^(0|null)$",
+        "fix": "settings put global always_finish_activities 0"
+      },
+      {
+        "name": "system screensaver off",
+        "why": "The launcher's own screensaver is the one in use.",
+        "check": "settings get secure screensaver_enabled",
+        "want": "^0$",
+        "fix": "settings put secure screensaver_enabled 0"
+      },
+      {
+        "name": "screensaver on sleep off",
+        "check": "settings get secure screensaver_activate_on_sleep",
+        "want": "^0$",
+        "fix": "settings put secure screensaver_activate_on_sleep 0",
+        "why": "The launcher's own screensaver is the one in use."
+      }
+    ]
+  }
+}

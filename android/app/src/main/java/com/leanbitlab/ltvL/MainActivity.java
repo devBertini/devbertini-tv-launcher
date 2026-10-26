@@ -1,0 +1,1782 @@
+/*
+ * FLauncher
+ * Copyright (C) 2021  Oscar Rojas
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.leanbitlab.ltvL;
+
+import android.app.NotificationManager;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.*;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import android.util.Pair;
+import android.media.tv.TvInputManager;
+import android.media.tv.TvInputInfo;
+import android.media.tv.TvContract;
+import android.database.ContentObserver;
+import android.os.Handler;
+import android.os.Looper;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.io.ByteArrayOutputStream;
+import android.app.usage.NetworkStats;
+import android.app.usage.NetworkStatsManager;
+import android.app.AppOpsManager;
+import android.os.RemoteException;
+
+import io.flutter.embedding.android.FlutterActivity;
+import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.plugin.common.BinaryMessenger;
+import io.flutter.plugin.common.EventChannel;
+import io.flutter.plugin.common.MethodChannel;
+
+import java.io.ByteArrayOutputStream;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import android.service.notification.StatusBarNotification;
+import android.content.ComponentName;
+
+public class MainActivity extends FlutterActivity {
+    private final String METHOD_CHANNEL = "me.efesser.flauncher/method";
+    private final String APPS_EVENT_CHANNEL = "me.efesser.flauncher/event_apps";
+    private final String NETWORK_EVENT_CHANNEL = "me.efesser.flauncher/event_network";
+    private final String NOTIFICATIONS_EVENT_CHANNEL = "me.efesser.flauncher/event_notifications";
+    private final String WEATHER_EVENT_CHANNEL = "me.efesser.flauncher/event_weather";
+    private final String WATCH_NEXT_EVENT_CHANNEL = "me.efesser.flauncher/event_watch_next";
+    private MethodChannel.Result pendingPermissionResult;
+    /** The method channel, for the calls this side makes into Dart (the Home notice). */
+    private MethodChannel methodChannel;
+    /** The activity on screen now, or the last one: the event channels, registered once per engine, act through it. */
+    private static MainActivity latest;
+    /** The engine whose event channels are registered: they outlive the activities that come and go over it. */
+    private static FlutterEngine eventsEngine;
+    private static final Handler mainThread = new Handler(Looper.getMainLooper());
+
+    /** The activity the event channels act through. */
+    static MainActivity latest() {
+        return latest;
+    }
+    private static final ExecutorService sIoExecutor = Executors.newFixedThreadPool(4);
+
+    /**
+     * Home pressed, from an app or with the home already in front: the Vitrine home goes back to its start, the rail
+     * and every panel over it closed and the focus on the first app (devBertiniHomeAgain in
+     * lib/devbertini/cinematic.dart). The engine keeps the home as it was left, so without this an app opened from
+     * the rail would bring it back open.
+     */
+    @Override
+    protected void onNewIntent(@NonNull Intent intent) {
+        super.onNewIntent(intent);
+        if (Intent.ACTION_MAIN.equals(intent.getAction()) && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            sendHomeAgain();
+        }
+    }
+
+    private void sendHomeAgain() {
+        if (methodChannel != null) methodChannel.invokeMethod("homeAgain", null);
+    }
+
+    /** The home's one engine (HomeEngine), so a screen Android makes again finds the home as it left it. */
+    @Override
+    public FlutterEngine provideFlutterEngine(@NonNull Context context) {
+        return HomeEngine.obtain(context);
+    }
+
+    /** The engine outlives this screen: Android may destroy the screen while an app is open. */
+    @Override
+    public boolean shouldDestroyEngineWithHost() {
+        return false;
+    }
+
+    @Override
+    public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
+        super.configureFlutterEngine(flutterEngine);
+        latest = this;
+
+        BinaryMessenger messenger = flutterEngine.getDartExecutor().getBinaryMessenger();
+
+        methodChannel = new MethodChannel(messenger, METHOD_CHANNEL);
+        methodChannel.setMethodCallHandler((call, result) -> {
+            switch (call.method) {
+                case "getApplications" -> result.success(getApplications());
+                case "getApplicationBanner" -> result.success(getApplicationBanner(call.arguments()));
+                case "getApplicationIcon" -> result.success(getApplicationIcon(call.arguments()));
+                case "launchActivityFromAction" -> result.success(launchActivityFromAction(call.arguments()));
+                case "launchApp" -> result.success(launchApp(call.arguments()));
+                case "launchTvControl" -> result.success(launchTvControl(call.arguments()));
+                // Time since the TV booted; apps may not read /proc/uptime on this TV.
+                case "getElapsedRealtime" -> result.success(android.os.SystemClock.elapsedRealtime());
+                // Which boot this is, so the studio intro plays once per power-on.
+                case "getBootCount" -> result.success(android.provider.Settings.Global.getInt(
+                        getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1));
+                case "openUrl" -> result.success(openUrl(call.arguments()));
+                case "openSettings" -> result.success(openSettings());
+                case "openScreensaverSettings" -> result.success(openScreensaverSettings());
+                case "openAppInfo" -> result.success(openAppInfo(call.arguments()));
+                case "uninstallApp" -> result.success(uninstallApp(call.arguments()));
+                case "isDefaultLauncher" -> result.success(isDefaultLauncher());
+                case "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability());
+                case "startAmbientMode" -> result.success(startAmbientMode());
+                case "getActiveNetworkInformation" -> result.success(getActiveNetworkInformation());
+                case "getDailyDataUsage" -> {
+                    long usage = getDailyDataUsage();
+                    if (usage == -1) {
+                        result.error("PERMISSION_DENIED", "Usage stats permission not granted", null);
+                    } else {
+                        result.success(usage);
+                    }
+                }
+                case "getWeeklyDataUsage" -> {
+                    long usage = getWeeklyDataUsage();
+                    if (usage == -1) {
+                        result.error("PERMISSION_DENIED", "Usage stats permission not granted", null);
+                    } else {
+                        result.success(usage);
+                    }
+                }
+                case "getMonthlyDataUsage" -> {
+                    long usage = getMonthlyDataUsage();
+                    if (usage == -1) {
+                        result.error("PERMISSION_DENIED", "Usage stats permission not granted", null);
+                    } else {
+                        result.success(usage);
+                    }
+                }
+                case "checkUsageStatsPermission" -> result.success(checkUsageStatsPermission());
+                case "requestUsageStatsPermission" -> {
+                    requestUsageStatsPermission();
+                    result.success(null);
+                }
+                case "checkWriteSettingsPermission" -> result.success(checkWriteSettingsPermission());
+                case "requestWriteSettingsPermission" -> result.success(requestWriteSettingsPermission());
+                case "setSystemBrightness" -> {
+                    Integer brightness = call.argument("brightness");
+                    if (brightness != null) {
+                        result.success(setSystemBrightness(brightness));
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Missing brightness", null);
+                    }
+                }
+                case "openDefaultLauncherSettings" -> result.success(openDefaultLauncherSettings());
+                case "openWifiSettings" -> result.success(openWifiSettings());
+                case "openVpnSettings" -> result.success(openVpnSettings());
+                case "getTvInputs" -> result.success(getTvInputs());
+                case "setSleepTimer" -> {
+                    Integer minutes = call.argument("minutes");
+                    result.success(SleepTimer.set(this, minutes == null ? 0 : minutes));
+                }
+                case "getSleepTimer" -> result.success(SleepTimer.at(this));
+                case "getTvSetupProblems" -> result.success(TvSetupCheck.problems(this));
+                case "getNowPlaying" -> result.success(getNowPlaying());
+                case "mediaPlayPause" -> result.success(mediaPlayPause(call.arguments()));
+                case "mediaSkip" -> result.success(mediaSkip(call.argument("package"), Boolean.TRUE.equals(call.argument("next"))));
+                case "getNowPlayingArt" -> result.success(getNowPlayingArt(call.arguments()));
+                case "launchTvInput" -> result.success(launchTvInput(call.arguments()));
+                case "checkNotificationListenerPermission" -> result.success(checkNotificationListenerPermission());
+                case "requestNotificationListenerPermission" -> result.success(requestNotificationListenerPermission());
+                case "openAppNotificationSettings" -> result.success(openAppNotificationSettings());
+                case "getActiveNotifications" -> result.success(getActiveNotifications());
+                case "dismissNotification" -> {
+                    String key = call.argument("key");
+                    result.success(dismissNotification(key));
+                }
+                case "dismissAllNotifications" -> result.success(dismissAllNotifications());
+                case "checkOverlayPermission" -> result.success(checkOverlayPermission());
+                case "requestOverlayPermission" -> result.success(requestOverlayPermission());
+                case "checkAccessibilityPermission" -> result.success(isAccessibilityServiceEnabled());
+                case "requestAccessibilityPermission" -> result.success(openAccessibilitySettings());
+                case "checkWatchNextPermission" -> result.success(checkWatchNextPermission());
+                case "requestWatchNextPermission" -> {
+                    if (checkWatchNextPermission()) {
+                        result.success(true);
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        if (pendingPermissionResult != null) {
+                            result.error("ALREADY_REQUESTING", "A permission request is already in progress", null);
+                        } else {
+                            pendingPermissionResult = result;
+                            requestPermissions(new String[]{"android.permission.READ_TV_LISTINGS"}, 1002);
+                        }
+                    } else {
+                        result.success(true);
+                    }
+                }
+                case "getWatchNextPrograms" -> result.success(getWatchNextPrograms());
+                case "deleteWatchNextProgram" -> {
+                    Number id = call.argument("id");
+                    if (id != null) {
+                        result.success(deleteWatchNextProgram(id.longValue()));
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Missing id", null);
+                    }
+                }
+                case "launchWatchNextProgram" -> {
+                    String intentUri = call.argument("intentUri");
+                    result.success(launchWatchNextProgram(intentUri));
+                }
+                case "getLatestWeatherData" -> result.success(getLatestWeatherData());
+                case "isBreezyWeatherInstalled" -> result.success(isBreezyWeatherInstalled());
+                case "openBreezyWeather" -> result.success(openBreezyWeather());
+                case "getPackageName" -> result.success(getPackageName());
+                case "playClickSound" -> {
+                    getWindow().getDecorView().playSoundEffect(android.view.SoundEffectConstants.CLICK);
+                    result.success(null);
+                }
+                default -> result.notImplemented();
+            }
+        });
+
+        // The event channels belong to the engine: registered once, they keep their listeners (and the Dart side its
+        // streams) when Android destroys this screen and makes another one over the same engine. Such a screen made
+        // again shows the home back at its start, as Home does.
+        if (eventsEngine == flutterEngine) {
+            sendHomeAgain();
+            return;
+        }
+        eventsEngine = flutterEngine;
+
+        new EventChannel(messenger, APPS_EVENT_CHANNEL).setStreamHandler(
+                new LauncherAppsEventStreamHandler(getApplicationContext()));
+
+        new EventChannel(messenger, NETWORK_EVENT_CHANNEL).setStreamHandler(
+                new NetworkEventStreamHandler(getApplicationContext()));
+
+        new EventChannel(messenger, NOTIFICATIONS_EVENT_CHANNEL).setStreamHandler(
+                new EventChannel.StreamHandler() {
+                    private LauncherNotificationListenerService.NotificationListener listener;
+
+                    @Override
+                    public void onListen(Object arguments, EventChannel.EventSink events) {
+                        listener = () -> {
+                            mainThread.post(() -> {
+                                try {
+                                    events.success(latest.getActiveNotifications());
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            });
+                        };
+                        LauncherNotificationListenerService.registerListener(listener);
+                        // Send current state immediately
+                        listener.onNotificationChanged();
+                    }
+
+                    @Override
+                    public void onCancel(Object arguments) {
+                        if (listener != null) {
+                            LauncherNotificationListenerService.unregisterListener(listener);
+                            listener = null;
+                        }
+                    }
+                }
+        );
+
+        new EventChannel(messenger, WEATHER_EVENT_CHANNEL).setStreamHandler(
+                new EventChannel.StreamHandler() {
+                    @Override
+                    public void onListen(Object arguments, EventChannel.EventSink events) {
+                        WeatherReceiver.setListener(weatherJson -> {
+                            mainThread.post(() -> {
+                                try {
+                                    events.success(weatherJson);
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            });
+                        });
+                        String weather = latest.getLatestWeatherData();
+                        if (weather != null) {
+                            events.success(weather);
+                        }
+                    }
+
+                    @Override
+                    public void onCancel(Object arguments) {
+                        WeatherReceiver.setListener(null);
+                    }
+                }
+        );
+
+        new EventChannel(messenger, WATCH_NEXT_EVENT_CHANNEL).setStreamHandler(
+                new EventChannel.StreamHandler() {
+                    private ContentObserver watchNextObserver;
+                    private boolean isObserverRegistered = false;
+                    private Runnable debounceRunnable;
+                    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+                    @Override
+                    public void onListen(Object arguments, EventChannel.EventSink events) {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                            return; // Watch Next is unsupported on Android < 8.0 (API < 26)
+                        }
+
+                        watchNextObserver = new ContentObserver(mainHandler) {
+                            @Override
+                            public void onChange(boolean selfChange, Uri uri) {
+                                super.onChange(selfChange, uri);
+                                if (debounceRunnable != null) {
+                                    mainHandler.removeCallbacks(debounceRunnable);
+                                }
+                                debounceRunnable = () -> {
+                                    try {
+                                        events.success(true);
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                };
+                                mainHandler.postDelayed(debounceRunnable, 500);
+                            }
+                        };
+
+                        registerWatchNextObserverApi26();
+                    }
+
+                    @RequiresApi(Build.VERSION_CODES.O)
+                    private void registerWatchNextObserverApi26() {
+                        try {
+                            latest.getApplicationContext().getContentResolver().registerContentObserver(
+                                    TvContract.WatchNextPrograms.CONTENT_URI,
+                                    true,
+                                    watchNextObserver
+                            );
+                            isObserverRegistered = true;
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+
+                    @Override
+                    public void onCancel(Object arguments) {
+                        if (debounceRunnable != null) {
+                            mainHandler.removeCallbacks(debounceRunnable);
+                            debounceRunnable = null;
+                        }
+                        if (isObserverRegistered && watchNextObserver != null) {
+                            try {
+                                latest.getApplicationContext().getContentResolver()
+                                        .unregisterContentObserver(watchNextObserver);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                            isObserverRegistered = false;
+                        }
+                        watchNextObserver = null;
+                    }
+                }
+        );
+    }
+
+    private List<Map<String, Serializable>> getApplications() {
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        CompletionService<Pair<Boolean, List<ResolveInfo>>> queryIntentActivitiesCompletionService = new ExecutorCompletionService<>(
+                executor);
+        queryIntentActivitiesCompletionService.submit(() -> Pair.create(false, queryIntentActivities(false)));
+        queryIntentActivitiesCompletionService.submit(() -> Pair.create(true, queryIntentActivities(true)));
+        List<ResolveInfo> tvActivitiesInfo = null;
+        List<ResolveInfo> nonTvActivitiesInfo = null;
+
+        int completed = 0;
+        while (completed < 2) {
+            try {
+                var activitiesInfo = queryIntentActivitiesCompletionService.take().get();
+
+                if (!activitiesInfo.first) {
+                    tvActivitiesInfo = activitiesInfo.second;
+                } else {
+                    nonTvActivitiesInfo = activitiesInfo.second;
+                }
+            } catch (InterruptedException | ExecutionException ignored) {
+            } finally {
+                completed += 1;
+            }
+        }
+
+        if (tvActivitiesInfo == null) tvActivitiesInfo = Collections.emptyList();
+        if (nonTvActivitiesInfo == null) nonTvActivitiesInfo = Collections.emptyList();
+
+        CompletionService<Map<String, Serializable>> completionService = new ExecutorCompletionService<>(executor);
+
+        List<Map<String, Serializable>> applications = new ArrayList<>(
+                tvActivitiesInfo.size() + nonTvActivitiesInfo.size());
+
+        boolean settingsPresent = false;
+        int appCount = 0;
+        for (ResolveInfo tvActivityInfo : tvActivitiesInfo) {
+            if (!settingsPresent) {
+                settingsPresent = tvActivityInfo.activityInfo.packageName.equals("com.android.tv.settings");
+            }
+
+            completionService.submit(() -> buildAppMap(tvActivityInfo.activityInfo, false, null));
+            appCount += 1;
+        }
+
+        for (ResolveInfo nonTvActivityInfo : nonTvActivitiesInfo) {
+            boolean nonDuplicate = true;
+
+            if (!settingsPresent) {
+                settingsPresent = nonTvActivityInfo.activityInfo.packageName.equals("com.android.settings");
+            }
+
+            for (ResolveInfo tvActivityInfo : tvActivitiesInfo) {
+                if (tvActivityInfo.activityInfo.packageName.equals(nonTvActivityInfo.activityInfo.packageName)) {
+                    nonDuplicate = false;
+                    break;
+                }
+            }
+
+            if (nonDuplicate) {
+                appCount += 1;
+                completionService.submit(() -> buildAppMap(nonTvActivityInfo.activityInfo, true, null));
+            }
+        }
+
+        while (appCount > 0) {
+            try {
+                Future<Map<String, Serializable>> appMap = completionService.take();
+                applications.add(appMap.get());
+            } catch (InterruptedException | ExecutionException ignored) {
+            } finally {
+                appCount -= 1;
+            }
+        }
+
+        executor.shutdown();
+
+        if (!settingsPresent) {
+            PackageManager packageManager = getPackageManager();
+            Intent settingsIntent = new Intent(Settings.ACTION_SETTINGS);
+            ActivityInfo activityInfo = settingsIntent.resolveActivityInfo(packageManager, 0);
+
+            if (activityInfo != null) {
+                applications.add(buildAppMap(activityInfo, false, Settings.ACTION_SETTINGS));
+            }
+        }
+
+        return applications;
+    }
+
+    public Map<String, Serializable> getApplication(String packageName) {
+        Map<String, Serializable> map = new java.util.HashMap<>();
+        PackageManager packageManager = getPackageManager();
+        Intent intent = packageManager.getLeanbackLaunchIntentForPackage(packageName);
+
+        if (intent == null) {
+            intent = packageManager.getLaunchIntentForPackage(packageName);
+        }
+
+        if (intent != null) {
+            ActivityInfo activityInfo = intent.resolveActivityInfo(getPackageManager(), 0);
+
+            if (activityInfo != null) {
+                map = buildAppMap(activityInfo, false, null);
+            }
+        }
+
+        return map;
+    }
+
+    private byte[] getApplicationBanner(String packageName) {
+        byte[] imageBytes = new byte[0];
+
+        PackageManager packageManager = getPackageManager();
+        try {
+            ApplicationInfo info = packageManager.getApplicationInfo(packageName, 0);
+            // The banner the app ships for the densest screens (640x360 at xxxhdpi): the home draws cards
+            // larger than the 320x180 banner of this TV's own density, which looked soft.
+            Drawable drawable = densest(packageManager, info, info.banner);
+            if (drawable == null) drawable = info.loadBanner(packageManager);
+
+            if (drawable != null) {
+                imageBytes = drawableToByteArray(drawable);
+            }
+        } catch (PackageManager.NameNotFoundException ignored) {
+        }
+
+        return imageBytes;
+    }
+
+    /** [resource] of the app at the densest density it ships, or null. */
+    private Drawable densest(PackageManager packageManager, ApplicationInfo info, int resource) {
+        if (resource == 0) return null;
+        try {
+            return packageManager.getResourcesForApplication(info)
+                    .getDrawableForDensity(resource, android.util.DisplayMetrics.DENSITY_XXXHIGH, null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private byte[] getApplicationIcon(String packageName) {
+        byte[] imageBytes = new byte[0];
+
+        PackageManager packageManager = getPackageManager();
+        try {
+            ApplicationInfo info = packageManager.getApplicationInfo(packageName, 0);
+            Drawable drawable = densest(packageManager, info, info.icon);
+            if (drawable == null) drawable = info.loadIcon(packageManager);
+
+            if (drawable != null) {
+                imageBytes = drawableToByteArray(drawable);
+            }
+        } catch (PackageManager.NameNotFoundException ignored) {
+        }
+
+        return imageBytes;
+    }
+
+    private List<ResolveInfo> queryIntentActivities(boolean sideloaded) {
+        String category;
+        if (sideloaded) {
+            category = Intent.CATEGORY_LAUNCHER;
+        } else {
+            category = Intent.CATEGORY_LEANBACK_LAUNCHER;
+        }
+
+        // NOTE: Would be nice to query the applications that match *either* of the
+        // above categories
+        // but from the addCategory function documentation, it says that it will "use
+        // activities
+        // that provide *all* the requested categories"
+        Intent intent = new Intent(Intent.ACTION_MAIN)
+                .addCategory(category);
+
+        return getPackageManager()
+                .queryIntentActivities(intent, 0);
+    }
+
+    private Map<String, Serializable> buildAppMap(ActivityInfo activityInfo, boolean sideloaded, String action) {
+        PackageManager packageManager = getPackageManager();
+
+        String applicationName = activityInfo.loadLabel(packageManager).toString(),
+                applicationVersionName = "";
+        try {
+            applicationVersionName = packageManager.getPackageInfo(activityInfo.packageName, 0).versionName;
+        } catch (PackageManager.NameNotFoundException ignored) {
+        }
+
+        Map<String, Serializable> appMap = new HashMap<>();
+        appMap.put("name", applicationName);
+        appMap.put("packageName", activityInfo.packageName);
+        appMap.put("version", applicationVersionName);
+        appMap.put("sideloaded", sideloaded);
+
+        if (action != null) {
+            appMap.put("action", action);
+        }
+        return appMap;
+    }
+
+    private boolean launchActivityFromAction(String action) {
+        // Prevent Intent Action Injection by only allowing known actions
+        if (Settings.ACTION_SETTINGS.equals(action)) {
+            return tryStartActivity(new Intent(action));
+        }
+        return false;
+    }
+
+    /**
+     * Opens one of the TV's own screens for the DevBertini home's TV controls. Only these ids are
+     * accepted, mapped here, so Dart never names a component (same guard as launchActivityFromAction).
+     */
+    private boolean launchTvControl(String id) {
+        if ("settings".equals(id)) {
+            return tryStartActivity(new Intent(Settings.ACTION_SETTINGS));
+        }
+        String component;
+        switch (id) {
+            case "picture" -> component = "com.android.tv.settings/com.tcl.settings.PictureActivity";
+            case "sound" -> component = "com.android.tv.settings/com.android.tv.settings.device.displaysound.DisplaySoundActivity";
+            case "game" -> component = "com.tcl.gamebar/com.tcl.gamebar.activity.MainActivity";
+            case "quick" -> component = "com.tcl.dashboard/com.tcl.dashboard.MainActivity";
+            case "energy" -> component = "com.android.tv.settings/com.android.tv.settings.device.eco.EnergyModesActivity";
+            default -> {
+                return false;
+            }
+        }
+        Intent intent = new Intent();
+        intent.setComponent(ComponentName.unflattenFromString(component));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return tryStartActivity(intent);
+    }
+
+    private boolean launchApp(String packageName) {
+        PackageManager packageManager = getPackageManager();
+        Intent intent = packageManager.getLeanbackLaunchIntentForPackage(packageName);
+
+        if (intent == null) {
+            intent = packageManager.getLaunchIntentForPackage(packageName);
+        }
+
+        return tryStartActivity(intent);
+    }
+
+    private boolean openUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            String scheme = uri.getScheme();
+            if (scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+                Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                return tryStartActivity(intent);
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean openSettings() {
+        return launchActivityFromAction(Settings.ACTION_SETTINGS);
+    }
+
+    private boolean openAppInfo(String packageName) {
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.fromParts("package", packageName, null));
+
+        return tryStartActivity(intent);
+    }
+
+    private boolean uninstallApp(String packageName) {
+        Intent intent = new Intent(Intent.ACTION_DELETE)
+                .setData(Uri.fromParts("package", packageName, null));
+
+        return tryStartActivity(intent);
+    }
+
+    private boolean checkForGetContentAvailability() {
+        List<ResolveInfo> intentActivities = getPackageManager().queryIntentActivities(
+                new Intent(Intent.ACTION_GET_CONTENT, null).setTypeAndNormalize("image/*"),
+                0);
+
+        return !intentActivities.isEmpty();
+    }
+
+    private boolean isDefaultLauncher() {
+        Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo defaultLauncher = getPackageManager().resolveActivity(intent, 0);
+
+        if (defaultLauncher != null && defaultLauncher.activityInfo != null) {
+            return defaultLauncher.activityInfo.packageName.equals(getPackageName());
+        }
+
+        return false;
+    }
+
+    private boolean startAmbientMode() {
+        Intent intent = new Intent(Intent.ACTION_MAIN)
+                .setClassName("com.android.systemui", "com.android.systemui.Somnambulator");
+
+        return tryStartActivity(intent);
+    }
+
+    private Map<String, Object> getActiveNetworkInformation() {
+        try {
+            ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Map<String, Object> map = new HashMap<>(NetworkUtils.getNetworkInformation(this, connectivityManager.getActiveNetwork()));
+                // The TV's IPv4 address on the local network, for the network panel.
+                android.net.LinkProperties link = connectivityManager.getLinkProperties(connectivityManager.getActiveNetwork());
+                if (link != null) {
+                    for (android.net.LinkAddress address : link.getLinkAddresses()) {
+                        if (address.getAddress() instanceof java.net.Inet4Address) {
+                            map.put("ipAddress", address.getAddress().getHostAddress());
+                        }
+                    }
+                }
+                return map;
+            } else {
+                // noinspection deprecation
+                return NetworkUtils.getNetworkInformation(this, connectivityManager.getActiveNetworkInfo());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            Map<String, Object> map = new java.util.HashMap<>();
+            map.put(NetworkUtils.KEY_NETWORK_TYPE, NetworkUtils.NETWORK_TYPE_UNKNOWN);
+            map.put(NetworkUtils.KEY_NETWORK_ACCESS, false);
+            map.put(NetworkUtils.KEY_INTERNET_ACCESS, false);
+            map.put(NetworkUtils.KEY_WIRELESS_SIGNAL_LEVEL, 0);
+            return map;
+        }
+    }
+
+    private boolean tryStartActivity(Intent intent) {
+        boolean success = true;
+
+        try {
+            startActivity(intent);
+        } catch (Exception ignored) {
+            success = false;
+        }
+
+        return success;
+    }
+
+    private byte[] drawableToByteArray(Drawable drawable) {
+        try {
+            if (drawable.getIntrinsicWidth() <= 0 || drawable.getIntrinsicHeight() <= 0) {
+                return new byte[0];
+            }
+
+            Bitmap bitmap;
+            if (drawable instanceof BitmapDrawable bitmapDrawable && bitmapDrawable.getBitmap() != null) {
+                bitmap = bitmapDrawable.getBitmap();
+            } else {
+                bitmap = drawableToBitmap(drawable);
+            }
+
+            if (bitmap == null) {
+                return new byte[0];
+            }
+
+            ByteArrayOutputStream stream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+            return stream.toByteArray();
+        } catch (Throwable t) {
+            t.printStackTrace();
+            return new byte[0];
+        }
+    }
+
+    Bitmap drawableToBitmap(Drawable drawable) {
+        try {
+            int width = Math.min(Math.max(drawable.getIntrinsicWidth(), 1), 512);
+            int height = Math.min(Math.max(drawable.getIntrinsicHeight(), 1), 512);
+            Bitmap bitmap = Bitmap.createBitmap(
+                    width,
+                    height,
+                    Bitmap.Config.ARGB_8888);
+
+            Canvas canvas = new Canvas(bitmap);
+            drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+            drawable.draw(canvas);
+            return bitmap;
+        } catch (Throwable t) {
+            t.printStackTrace();
+            return null;
+        }
+    }
+
+    private int getActiveNetworkTransportType() {
+        try {
+            ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager == null) return -1;
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.net.Network activeNetwork = connectivityManager.getActiveNetwork();
+                if (activeNetwork != null) {
+                    NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(activeNetwork);
+                    if (capabilities != null) {
+                        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                            return ConnectivityManager.TYPE_WIFI;
+                        } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                            return ConnectivityManager.TYPE_MOBILE;
+                        } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                            return ConnectivityManager.TYPE_ETHERNET;
+                        } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                            return ConnectivityManager.TYPE_VPN;
+                        }
+                    }
+                }
+            } else {
+                // noinspection deprecation
+                android.net.NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+                if (activeNetworkInfo != null) {
+                    return activeNetworkInfo.getType();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+    private long getDailyDataUsage() {
+        if (!checkUsageStatsPermission()) {
+            return -1;
+        }
+
+        NetworkStatsManager networkStatsManager = (NetworkStatsManager) getSystemService(Context.NETWORK_STATS_SERVICE);
+        if (networkStatsManager == null)
+            return 0;
+
+
+
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        calendar.set(java.util.Calendar.MINUTE, 0);
+        calendar.set(java.util.Calendar.SECOND, 0);
+        calendar.set(java.util.Calendar.MILLISECOND, 0);
+        long startTime = calendar.getTimeInMillis();
+        long endTime = System.currentTimeMillis();
+
+        long totalBytes = 0;
+        try {
+            NetworkStats.Bucket wifiBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_WIFI,
+                    null,
+                    startTime,
+                    endTime);
+            if (wifiBucket != null) {
+                totalBytes += wifiBucket.getRxBytes() + wifiBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            NetworkStats.Bucket mobileBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_MOBILE,
+                    null,
+                    startTime,
+                    endTime);
+            if (mobileBucket != null) {
+                totalBytes += mobileBucket.getRxBytes() + mobileBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            NetworkStats.Bucket ethernetBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_ETHERNET,
+                    null,
+                    startTime,
+                    endTime);
+            if (ethernetBucket != null) {
+                totalBytes += ethernetBucket.getRxBytes() + ethernetBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return totalBytes;
+    }
+
+    private long getWeeklyDataUsage() {
+        if (!checkUsageStatsPermission()) {
+            return -1;
+        }
+
+        NetworkStatsManager networkStatsManager = (NetworkStatsManager) getSystemService(Context.NETWORK_STATS_SERVICE);
+        if (networkStatsManager == null)
+            return 0;
+
+
+
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.set(java.util.Calendar.DAY_OF_WEEK, calendar.getFirstDayOfWeek());
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        calendar.set(java.util.Calendar.MINUTE, 0);
+        calendar.set(java.util.Calendar.SECOND, 0);
+        calendar.set(java.util.Calendar.MILLISECOND, 0);
+        long startTime = calendar.getTimeInMillis();
+        long endTime = System.currentTimeMillis();
+
+        long totalBytes = 0;
+        try {
+            NetworkStats.Bucket wifiBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_WIFI,
+                    null,
+                    startTime,
+                    endTime);
+            if (wifiBucket != null) {
+                totalBytes += wifiBucket.getRxBytes() + wifiBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            NetworkStats.Bucket mobileBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_MOBILE,
+                    null,
+                    startTime,
+                    endTime);
+            if (mobileBucket != null) {
+                totalBytes += mobileBucket.getRxBytes() + mobileBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            NetworkStats.Bucket ethernetBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_ETHERNET,
+                    null,
+                    startTime,
+                    endTime);
+            if (ethernetBucket != null) {
+                totalBytes += ethernetBucket.getRxBytes() + ethernetBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return totalBytes;
+    }
+
+    private long getMonthlyDataUsage() {
+        if (!checkUsageStatsPermission()) {
+            return -1;
+        }
+
+        NetworkStatsManager networkStatsManager = (NetworkStatsManager) getSystemService(Context.NETWORK_STATS_SERVICE);
+        if (networkStatsManager == null)
+            return 0;
+
+
+
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.set(java.util.Calendar.DAY_OF_MONTH, 1);
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        calendar.set(java.util.Calendar.MINUTE, 0);
+        calendar.set(java.util.Calendar.SECOND, 0);
+        calendar.set(java.util.Calendar.MILLISECOND, 0);
+        long startTime = calendar.getTimeInMillis();
+        long endTime = System.currentTimeMillis();
+
+        long totalBytes = 0;
+        try {
+            NetworkStats.Bucket wifiBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_WIFI,
+                    null,
+                    startTime,
+                    endTime);
+            if (wifiBucket != null) {
+                totalBytes += wifiBucket.getRxBytes() + wifiBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            NetworkStats.Bucket mobileBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_MOBILE,
+                    null,
+                    startTime,
+                    endTime);
+            if (mobileBucket != null) {
+                totalBytes += mobileBucket.getRxBytes() + mobileBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            NetworkStats.Bucket ethernetBucket = networkStatsManager.querySummaryForDevice(
+                    ConnectivityManager.TYPE_ETHERNET,
+                    null,
+                    startTime,
+                    endTime);
+            if (ethernetBucket != null) {
+                totalBytes += ethernetBucket.getRxBytes() + ethernetBucket.getTxBytes();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return totalBytes;
+    }
+
+    private boolean checkUsageStatsPermission() {
+        AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
+        int mode;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            mode = appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(), getPackageName());
+        } else {
+            mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(), getPackageName());
+        }
+
+        if (mode == AppOpsManager.MODE_ALLOWED) {
+            return true;
+        }
+
+        if (mode == AppOpsManager.MODE_DEFAULT) {
+            try {
+                NetworkStatsManager networkStatsManager = (NetworkStatsManager) getSystemService(Context.NETWORK_STATS_SERVICE);
+                if (networkStatsManager != null) {
+                    long now = System.currentTimeMillis();
+                    networkStatsManager.querySummaryForDevice(ConnectivityManager.TYPE_WIFI, null, now - 1, now);
+                    return true;
+                }
+            } catch (SecurityException e) {
+                return false;
+            } catch (Exception e) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void requestUsageStatsPermission() {
+        Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+        tryStartActivity(intent);
+    }
+
+    private boolean checkWriteSettingsPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return Settings.System.canWrite(this);
+        }
+        return true;
+    }
+
+    private boolean requestWriteSettingsPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                        Uri.parse("package:" + getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (tryStartActivity(intent)) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (tryStartActivity(intent)) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+            try {
+                Intent intent = new Intent(Settings.ACTION_SETTINGS);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                return tryStartActivity(intent);
+            } catch (Exception ignored) {}
+            return false;
+        }
+        return true;
+    }
+
+    private boolean setSystemBrightness(int brightness) {
+        if (checkWriteSettingsPermission()) {
+            try {
+                android.content.ContentResolver resolver = getContentResolver();
+                // 1. Standard Android brightness
+                Settings.System.putInt(resolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
+                Settings.System.putInt(resolver, Settings.System.SCREEN_BRIGHTNESS, brightness);
+                
+                // 2. Try common TV "Backlight" keys (Vendor specific)
+                Settings.System.putInt(resolver, "backlight", brightness);
+                Settings.System.putInt(resolver, "backlight_level", brightness);
+                
+                return true;
+            } catch (Exception e) {
+                // Ignore errors on specific keys as they may not exist
+                return true; 
+            }
+        }
+        return false;
+    }
+
+    private boolean openDefaultLauncherSettings() {
+        // 1. Try Android TV home settings
+        Intent homeIntent = new Intent(Settings.ACTION_HOME_SETTINGS);
+        if (tryStartActivity(homeIntent)) {
+            return true;
+        }
+
+        // 2. Try manage default apps settings
+        Intent defaultAppsIntent = new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS);
+        if (tryStartActivity(defaultAppsIntent)) {
+            return true;
+        }
+
+        // 3. Fallback to main settings
+        return launchActivityFromAction(Settings.ACTION_SETTINGS);
+    }
+
+    private boolean openWifiSettings() {
+        // 1. Try Android Q+ WiFi panel
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
+            if (tryStartActivity(panelIntent)) {
+                return true;
+            }
+        }
+
+        // 2. Try standard WiFi settings
+        Intent wifiIntent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+        if (tryStartActivity(wifiIntent)) {
+            return true;
+        }
+
+        // 3. Fallback to general wireless settings
+        Intent wirelessIntent = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
+        if (tryStartActivity(wirelessIntent)) {
+            return true;
+        }
+
+        // 4. Final fallback - open main settings
+        return launchActivityFromAction(Settings.ACTION_SETTINGS);
+    }
+
+    private boolean openVpnSettings() {
+        // 1. Try standard VPN settings
+        Intent vpnIntent = new Intent(Settings.ACTION_VPN_SETTINGS);
+        if (tryStartActivity(vpnIntent)) {
+            return true;
+        }
+
+        // 2. Fallback to general wireless settings
+        Intent wirelessIntent = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
+        if (tryStartActivity(wirelessIntent)) {
+            return true;
+        }
+
+        // 3. Final fallback - open main settings
+        return launchActivityFromAction(Settings.ACTION_SETTINGS);
+    }
+
+    private boolean openScreensaverSettings() {
+        // 1. Try Android TV specific screensaver settings (DaydreamActivity - from
+        // Aerial Views)
+        Intent tvIntent = new Intent(Intent.ACTION_MAIN);
+        tvIntent.setClassName("com.android.tv.settings",
+                "com.android.tv.settings.device.display.daydream.DaydreamActivity");
+        if (tryStartActivity(tvIntent)) {
+            return true;
+        }
+
+        // 2. Try standard Android screensaver/dream settings
+        Intent dreamIntent = new Intent(Settings.ACTION_DREAM_SETTINGS);
+        if (tryStartActivity(dreamIntent)) {
+            return true;
+        }
+
+        // 3. FALLBACK: Try Display Settings (often contains screensaver on newer
+        // Android TV/Google TV)
+        Intent displayIntent = new Intent(Settings.ACTION_DISPLAY_SETTINGS);
+        if (tryStartActivity(displayIntent)) {
+            return true;
+        }
+
+        // 4. Final fallback - open main settings
+        return launchActivityFromAction(Settings.ACTION_SETTINGS);
+    }
+
+    private List<Map<String, Object>> getTvInputs() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            TvInputManager manager = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+            if (manager != null) {
+                List<TvInputInfo> inputs = manager.getTvInputList();
+                for (TvInputInfo input : inputs) {
+                    if (input.isPassthroughInput()) {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("id", input.getId());
+                        CharSequence label = input.loadLabel(this);
+                        map.put("label", label != null ? label.toString() : input.getId());
+                        map.put("type", input.getType());
+                        // A device found over HDMI-CEC (a console, a player) is a child of its HDMI
+                        // port's input, and its label is the device's own name.
+                        map.put("device", input.getParentId() != null);
+                        // 0 on, 1 in standby, 2 unplugged (TvInputManager.INPUT_STATE_*).
+                        map.put("state", manager.getInputState(input.getId()));
+                        // The TCL keeps a resting console "on"; the launcher saw its "no signal" instead.
+                        map.put("resting", input.getParentId() != null && label != null
+                                && ConsoleRest.isResting(this, label.toString()));
+                        result.add(map);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // TIF might not be supported or initialized on emulator
+        }
+        return result;
+    }
+
+    /** The media sessions other apps publish; readable only with notification access. */
+    private List<android.media.session.MediaController> mediaSessions() {
+        android.media.session.MediaSessionManager manager =
+                (android.media.session.MediaSessionManager) getSystemService(Context.MEDIA_SESSION_SERVICE);
+        List<android.media.session.MediaController> sessions = new ArrayList<>(
+                manager.getActiveSessions(new ComponentName(this, LauncherNotificationListenerService.class)));
+        // Spotify on the TV keeps playing with its session marked inactive (it then leaves the list
+        // above), while its media notification still carries the session: those count too.
+        LauncherNotificationListenerService listener = LauncherNotificationListenerService.getInstance();
+        if (listener != null) {
+            try {
+                for (android.service.notification.StatusBarNotification sbn : listener.getActiveNotifications()) {
+                    Object token = sbn.getNotification().extras.getParcelable(android.app.Notification.EXTRA_MEDIA_SESSION);
+                    if (!(token instanceof android.media.session.MediaSession.Token)) continue;
+                    boolean known = false;
+                    for (android.media.session.MediaController c : sessions) {
+                        if (c.getPackageName().equals(sbn.getPackageName())) known = true;
+                    }
+                    if (!known) sessions.add(new android.media.session.MediaController(this, (android.media.session.MediaSession.Token) token));
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return sessions;
+    }
+
+    /**
+     * What plays in the background (music left running in another app): the first session playing,
+     * else the first one paused, with its title and artist; null when nothing plays or the launcher
+     * has no notification access.
+     */
+    private Map<String, Object> getNowPlaying() {
+        try {
+            android.media.session.MediaController paused = null;
+            android.media.session.MediaController playing = null;
+            for (android.media.session.MediaController c : mediaSessions()) {
+                android.media.session.PlaybackState state = c.getPlaybackState();
+                if (state == null || c.getMetadata() == null) continue;
+                if (state.getState() == android.media.session.PlaybackState.STATE_PLAYING && playing == null) playing = c;
+                if (state.getState() == android.media.session.PlaybackState.STATE_PAUSED && paused == null) paused = c;
+            }
+            android.media.session.MediaController c = playing != null ? playing : paused;
+            if (c == null) return null;
+            android.media.MediaMetadata metadata = c.getMetadata();
+            CharSequence title = metadata.getText(android.media.MediaMetadata.METADATA_KEY_TITLE);
+            CharSequence artist = metadata.getText(android.media.MediaMetadata.METADATA_KEY_ARTIST);
+            if (title == null || title.length() == 0) return null;
+            Map<String, Object> map = new HashMap<>();
+            map.put("package", c.getPackageName());
+            map.put("title", title.toString());
+            map.put("artist", artist != null ? artist.toString() : "");
+            map.put("playing", c == playing);
+            // Where the track is now and how long it lasts, for the island's progress line.
+            android.media.session.PlaybackState state = c.getPlaybackState();
+            long position = state.getPosition();
+            if (c == playing && state.getLastPositionUpdateTime() > 0) {
+                position += (long) ((android.os.SystemClock.elapsedRealtime() - state.getLastPositionUpdateTime())
+                        * state.getPlaybackSpeed());
+            }
+            map.put("position", Math.max(0L, position));
+            map.put("duration", Math.max(0L, metadata.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION)));
+            return map;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Pauses or resumes [packageName]'s media session. */
+    /** Skips [packageName]'s media to the next track, or back to the previous one. */
+    private boolean mediaSkip(String packageName, boolean next) {
+        try {
+            for (android.media.session.MediaController c : mediaSessions()) {
+                if (!c.getPackageName().equals(packageName)) continue;
+                if (next) {
+                    c.getTransportControls().skipToNext();
+                } else {
+                    c.getTransportControls().skipToPrevious();
+                }
+                return true;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    /** The cover of what [packageName] plays, as a small PNG; null when it publishes none. */
+    private byte[] getNowPlayingArt(String packageName) {
+        try {
+            for (android.media.session.MediaController c : mediaSessions()) {
+                if (!c.getPackageName().equals(packageName) || c.getMetadata() == null) continue;
+                android.media.MediaMetadata m = c.getMetadata();
+                Bitmap art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
+                if (art == null) art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ART);
+                if (art == null) art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+                if (art == null) return null;
+                Bitmap small = Bitmap.createScaledBitmap(art, 128, 128 * art.getHeight() / Math.max(1, art.getWidth()), true);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                small.compress(Bitmap.CompressFormat.PNG, 100, out);
+                return out.toByteArray();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private boolean mediaPlayPause(String packageName) {
+        try {
+            for (android.media.session.MediaController c : mediaSessions()) {
+                if (!c.getPackageName().equals(packageName)) continue;
+                android.media.session.PlaybackState state = c.getPlaybackState();
+                if (state != null && state.getState() == android.media.session.PlaybackState.STATE_PLAYING) {
+                    c.getTransportControls().pause();
+                } else {
+                    c.getTransportControls().play();
+                }
+                return true;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private boolean launchTvInput(String inputId) {
+        try {
+            Uri uri = TvContract.buildChannelUriForPassthroughInput(inputId);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setData(uri);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            return tryStartActivity(intent);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean checkNotificationListenerPermission() {
+        if (LauncherNotificationListenerService.getInstance() != null) {
+            return true;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                ComponentName cn = new ComponentName(this, LauncherNotificationListenerService.class);
+                if (nm.isNotificationListenerAccessGranted(cn)) {
+                    return true;
+                }
+            }
+        }
+
+        String packageName = getPackageName();
+        String flat = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+        if (flat != null && !flat.isEmpty()) {
+            if (flat.contains(packageName) || flat.contains("com.leanbitlab.ltvL")) {
+                return true;
+            }
+            String[] names = flat.split(":");
+            for (String name : names) {
+                if (name.contains(packageName) || name.contains("com.leanbitlab.ltvL")) {
+                    return true;
+                }
+                ComponentName cn = ComponentName.unflattenFromString(name);
+                if (cn != null && (cn.getPackageName().equals(packageName) || cn.getPackageName().contains("leanbitlab"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean requestNotificationListenerPermission() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Intent detailIntent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS);
+                ComponentName cn = new ComponentName(this, LauncherNotificationListenerService.class);
+                detailIntent.putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, cn.flattenToString());
+                detailIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (detailIntent.resolveActivity(getPackageManager()) != null) {
+                    startActivity(detailIntent);
+                    return true;
+                }
+            }
+
+            Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                startActivity(intent);
+                return true;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    private boolean openAppNotificationSettings() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (intent.resolveActivity(getPackageManager()) != null) {
+                    startActivity(intent);
+                    return true;
+                }
+            }
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private List<Map<String, Object>> getActiveNotifications() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        LauncherNotificationListenerService service = LauncherNotificationListenerService.getInstance();
+        if (service == null) {
+            return list;
+        }
+        try {
+            StatusBarNotification[] sbns = service.getActiveNotifications();
+            if (sbns != null) {
+                for (StatusBarNotification sbn : sbns) {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("key", sbn.getKey());
+                    map.put("packageName", sbn.getPackageName());
+                    
+                    android.app.Notification notification = sbn.getNotification();
+                    String title = "";
+                    String text = "";
+                    if (notification != null && notification.extras != null) {
+                        CharSequence titleChar = notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE);
+                        CharSequence textChar = notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT);
+                        if (titleChar != null) title = titleChar.toString();
+                        if (textChar != null) text = textChar.toString();
+                    }
+                    map.put("title", title);
+                    map.put("text", text);
+                    map.put("isClearable", sbn.isClearable());
+                    list.add(map);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+    private boolean dismissNotification(String key) {
+        LauncherNotificationListenerService service = LauncherNotificationListenerService.getInstance();
+        if (service == null || key == null) {
+            return false;
+        }
+        try {
+            service.cancelNotification(key);
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private boolean dismissAllNotifications() {
+        LauncherNotificationListenerService service = LauncherNotificationListenerService.getInstance();
+        if (service == null) {
+            return false;
+        }
+        try {
+            service.cancelAllNotifications();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private boolean checkOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return Settings.canDrawOverlays(this);
+        }
+        return true;
+    }
+
+    private boolean requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                return true;
+            } catch (Exception e) {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    return true;
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static String cursorStringOrEmpty(android.database.Cursor cursor, String column) {
+        String val = cursor.getString(cursor.getColumnIndexOrThrow(column));
+        return val != null ? val : "";
+    }
+
+    private List<Map<String, Object>> getWatchNextPrograms() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return Collections.emptyList();
+        }
+        return getWatchNextProgramsApi26();
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private List<Map<String, Object>> getWatchNextProgramsApi26() {
+        List<Map<String, Object>> list = new ArrayList<>();
+
+        String[] projection = {
+            TvContract.WatchNextPrograms._ID,
+            TvContract.WatchNextPrograms.COLUMN_PACKAGE_NAME,
+            TvContract.WatchNextPrograms.COLUMN_TITLE,
+            TvContract.WatchNextPrograms.COLUMN_SHORT_DESCRIPTION,
+            TvContract.WatchNextPrograms.COLUMN_LONG_DESCRIPTION,
+            TvContract.WatchNextPrograms.COLUMN_EPISODE_TITLE,
+            TvContract.WatchNextPrograms.COLUMN_WATCH_NEXT_TYPE,
+            TvContract.WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS,
+            TvContract.WatchNextPrograms.COLUMN_LAST_PLAYBACK_POSITION_MILLIS,
+            TvContract.WatchNextPrograms.COLUMN_DURATION_MILLIS,
+            TvContract.WatchNextPrograms.COLUMN_INTENT_URI,
+            TvContract.WatchNextPrograms.COLUMN_POSTER_ART_URI,
+            TvContract.WatchNextPrograms.COLUMN_THUMBNAIL_URI
+        };
+
+        try (android.database.Cursor cursor = getContentResolver().query(
+                TvContract.WatchNextPrograms.CONTENT_URI,
+                projection,
+                null,
+                null,
+                TvContract.WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS + " DESC")) {
+
+            if (cursor == null) {
+                return list;
+            }
+
+            final int maxFetch = 100;
+            int row = 0;
+            while (row < maxFetch && cursor.moveToNext()) {
+                row++;
+
+                long time = 0;
+                int timeCol = cursor.getColumnIndex(TvContract.WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS);
+                if (timeCol != -1 && !cursor.isNull(timeCol)) {
+                    time = cursor.getLong(timeCol);
+                    if (time > 0 && time < 10000000000L) {
+                        time *= 1000L;
+                    }
+                }
+
+                String poster = cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_POSTER_ART_URI);
+                if (poster.isEmpty()) {
+                    poster = cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_THUMBNAIL_URI);
+                }
+
+                String title = cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_TITLE);
+                String episodeTitle = cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_EPISODE_TITLE);
+                if (title.isEmpty() && !episodeTitle.isEmpty()) {
+                    title = episodeTitle;
+                }
+
+                String shortDesc = cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_SHORT_DESCRIPTION);
+                String longDesc = cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_LONG_DESCRIPTION);
+
+                String description = shortDesc;
+                if (description.isEmpty() || description.trim().equalsIgnoreCase(title.trim())) {
+                    if (!longDesc.isEmpty() && !longDesc.trim().equalsIgnoreCase(title.trim())) {
+                        description = longDesc;
+                    } else if (!episodeTitle.isEmpty() && !episodeTitle.trim().equalsIgnoreCase(title.trim())) {
+                        description = episodeTitle;
+                    }
+                }
+
+                Map<String, Object> map = new HashMap<>();
+                map.put("id", cursor.getLong(cursor.getColumnIndexOrThrow(TvContract.WatchNextPrograms._ID)));
+                map.put("packageName", cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_PACKAGE_NAME));
+                map.put("title", title);
+                map.put("description", description);
+                map.put("watchNextType", cursor.getInt(cursor.getColumnIndexOrThrow(TvContract.WatchNextPrograms.COLUMN_WATCH_NEXT_TYPE)));
+                map.put("lastEngagementTime", time);
+                map.put("playbackPosition", cursor.getLong(cursor.getColumnIndexOrThrow(TvContract.WatchNextPrograms.COLUMN_LAST_PLAYBACK_POSITION_MILLIS)));
+                map.put("duration", cursor.getLong(cursor.getColumnIndexOrThrow(TvContract.WatchNextPrograms.COLUMN_DURATION_MILLIS)));
+                map.put("intentUri", cursorStringOrEmpty(cursor, TvContract.WatchNextPrograms.COLUMN_INTENT_URI));
+                map.put("posterArtUri", poster);
+                list.add(map);
+            }
+
+            // Explicitly sort descending by last engagement time (most recently watched first),
+            // and fallback to ID descending if timestamps are identical.
+            list.sort((a, b) -> {
+                long timeA = (Long) a.get("lastEngagementTime");
+                long timeB = (Long) b.get("lastEngagementTime");
+                if (timeA != timeB) {
+                    return Long.compare(timeB, timeA);
+                }
+                long idA = (Long) a.get("id");
+                long idB = (Long) b.get("id");
+                return Long.compare(idB, idA);
+            });
+
+            if (list.size() > 20) {
+                list = new ArrayList<>(list.subList(0, 20));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return list;
+    }
+
+    private boolean deleteWatchNextProgram(long id) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return false;
+        }
+        return deleteWatchNextProgramApi26(id);
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private boolean deleteWatchNextProgramApi26(long id) {
+        try {
+            Uri uri = TvContract.buildWatchNextProgramUri(id);
+            int rowsDeleted = getContentResolver().delete(uri, null, null);
+            return rowsDeleted > 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private boolean launchWatchNextProgram(String intentUri) {
+        if (intentUri == null || intentUri.isEmpty()) {
+            return false;
+        }
+        try {
+            Intent intent = Intent.parseUri(intentUri, Intent.URI_INTENT_SCHEME);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.setSelector(null);
+            return tryStartActivity(intent);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    private boolean isAccessibilityServiceEnabled() {
+        String service = getPackageName() + "/" + LauncherAccessibilityService.class.getName();
+        int accessibilityEnabled = 0;
+        try {
+            accessibilityEnabled = Settings.Secure.getInt(
+                getContentResolver(),
+                Settings.Secure.ACCESSIBILITY_ENABLED
+            );
+        } catch (Settings.SettingNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        if (accessibilityEnabled == 1) {
+            String settingValue = Settings.Secure.getString(
+                getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            );
+            if (settingValue != null) {
+                String[] services = settingValue.split(":");
+                for (String s : services) {
+                    if (s.equalsIgnoreCase(service)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean openAccessibilitySettings() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (tryStartActivity(intent)) {
+                return true;
+            }
+        } catch (Exception ignored) {}
+        try {
+            Intent intent = new Intent(Settings.ACTION_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            return tryStartActivity(intent);
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private boolean checkWatchNextPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return checkSelfPermission("com.android.providers.tv.permission.READ_WRITE_WATCH_NEXT_PROGRAMS") == PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission("android.permission.READ_TV_LISTINGS") == PackageManager.PERMISSION_GRANTED;
+        }
+        return true;
+    }
+
+
+
+    private String getLatestWeatherData() {
+        android.content.SharedPreferences prefs = getSharedPreferences(WeatherReceiver.PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(WeatherReceiver.KEY_WEATHER_JSON, null);
+    }
+
+    private boolean isBreezyWeatherInstalled() {
+        try {
+            getPackageManager().getPackageInfo("org.breezyweather", 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    private boolean openBreezyWeather() {
+        try {
+            Intent launchIntent = getPackageManager().getLaunchIntentForPackage("org.breezyweather");
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(launchIntent);
+                return true;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 1002) {
+            if (pendingPermissionResult != null) {
+                boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+                pendingPermissionResult.success(granted);
+                pendingPermissionResult = null;
+            }
+        }
+    }
+}
